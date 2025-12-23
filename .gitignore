@@ -9,7 +9,7 @@
 
 # Ignore machine-specific Makefiles in ANY subdirectory
 **/STM32Make.make
-
+**/.stm32env
 # Standard build artifacts
 **/*.elf
 **/*.bin
