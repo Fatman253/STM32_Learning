@@ -1,0 +1,17 @@
+# Ignore build folders in ANY subdirectory
+**/build/
+**/Debug/
+**/Release/
+
+# Ignore VS Code settings in ANY subdirectory
+**/.vscode/
+**/*.ioc.bak
+
+# Ignore machine-specific Makefiles in ANY subdirectory
+**/STM32Make.make
+
+# Standard build artifacts
+**/*.elf
+**/*.bin
+**/*.hex
+**/*.map
