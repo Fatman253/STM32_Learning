@@ -9,6 +9,19 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private typedef -----------------------------------------------------------*/
+
+// Page 63 (Last Page of 64KB Flash)
+#define FLASH_PAGE_ADDR  0x0800FC00 
+#define PAGE_SIZE        1024
+#define MAGIC_CODE       0xDEADBEEF // Safety check
+
+// Structure for Saved Settings
+typedef struct {
+    uint16_t saved_pwm;
+    uint32_t magic;      // To verify data validity
+} RobotConfig;
+
+
 typedef struct __attribute__((packed)) {
     uint32_t timestamp;   // 4 Bytes (millis)
     uint16_t pwm_value;   // 2 Bytes (CCR3)
@@ -68,6 +81,87 @@ void Fast_USB_Send(uint8_t *data, uint32_t len)
     }
 }
 
+/* FLASH FUNCTIONS -----------------------------------------------------------*/
+
+// 1. Load Settings from Flash
+void Flash_Load_Smart(RobotConfig *cfg) {
+    uint32_t curr_addr = FLASH_PAGE_ADDR;
+    uint32_t last_valid_addr = 0;
+
+    // Scan the page to find the LATEST valid entry
+    while (curr_addr < (FLASH_PAGE_ADDR + PAGE_SIZE)) {
+        RobotConfig *temp = (RobotConfig*)curr_addr;
+        if (temp->magic == MAGIC_CODE) { 
+            last_valid_addr = curr_addr; // Found one!
+        } else if (temp->magic == 0xFFFFFFFF) {
+            break; // Found empty space, stop searching
+        }
+        curr_addr += sizeof(RobotConfig); // Check next slot
+    }
+
+    if (last_valid_addr != 0) {
+        *cfg = *(RobotConfig*)last_valid_addr; // Load data
+    } else {
+        cfg->saved_pwm = 100; // Default value if Flash is empty
+    }
+}
+
+// 2. Save Settings to Flash (Smart Append)
+void Flash_Save_Smart(RobotConfig *cfg) {
+    // 1. Find the next Empty Slot
+    uint32_t dest_addr = FLASH_PAGE_ADDR;
+    
+    while (dest_addr < (FLASH_PAGE_ADDR + PAGE_SIZE)) {
+        // If we find 0xFFFFFFFF, this slot is empty
+        if (*(uint32_t*)dest_addr == 0xFFFFFFFF) {
+            break;
+        }
+        dest_addr += sizeof(RobotConfig);
+    }
+
+    // --- THE FIX IS HERE ---
+    // Check if adding our data size goes PAST the end of the page
+    if (dest_addr + sizeof(RobotConfig) > (FLASH_PAGE_ADDR + PAGE_SIZE)) {
+        
+        // UNLOCK
+        if (FLASH->CR & FLASH_CR_LOCK) {
+            FLASH->KEYR = 0x45670123U;
+            FLASH->KEYR = 0xCDEF89ABU;
+        }
+
+        // ERASE PAGE
+        while (FLASH->SR & FLASH_SR_BSY);
+        FLASH->CR |= FLASH_CR_PER; 
+        FLASH->AR  = FLASH_PAGE_ADDR; 
+        FLASH->CR |= FLASH_CR_STRT;
+        while (FLASH->SR & FLASH_SR_BSY);
+        FLASH->CR &= ~FLASH_CR_PER;
+        
+        // Reset to the beginning
+        dest_addr = FLASH_PAGE_ADDR;
+    }
+    // -----------------------
+
+    // 2. Write Data
+    if (FLASH->CR & FLASH_CR_LOCK) {
+        FLASH->KEYR = 0x45670123U;
+        FLASH->KEYR = 0xCDEF89ABU;
+    }
+
+    FLASH->CR |= FLASH_CR_PG; // Program Mode
+    uint16_t *data = (uint16_t*)cfg;
+    
+    // Write 16-bits at a time
+    for (int i = 0; i < sizeof(RobotConfig) / 2; i++) {
+        *(__IO uint16_t*)dest_addr = data[i];
+        while (FLASH->SR & FLASH_SR_BSY);
+        dest_addr += 2;
+    }
+
+    FLASH->CR &= ~FLASH_CR_PG; // Disable PG
+    FLASH->CR |= FLASH_CR_LOCK; // Lock
+}
+
 
 
 int main(void)
@@ -110,6 +204,16 @@ int main(void)
   // 1. Define a message buffer
     char msg[64]; 
   RobotState myRobot;
+
+  RobotConfig myConfig;
+  myConfig.magic = MAGIC_CODE;
+  Flash_Load_Smart(&myConfig);
+
+  myRobot.status_flag = myConfig.saved_pwm++;
+  if(myConfig.saved_pwm > 1000) myConfig.saved_pwm = 0;
+  Flash_Save_Smart(&myConfig);
+
+
     // 2. Format the message (Example: Sending the current millis)
     // We use sprintf to combine text and numbers
   while (1)
@@ -119,7 +223,7 @@ int main(void)
     myRobot.timestamp   = HAL_GetTick();
     myRobot.pwm_value   = (uint16_t)TIM3->CCR3++;
     if(TIM3->CCR3 > 1000) TIM3->CCR3 = 0;
-    myRobot.status_flag = 1;                    // Example status
+    // myRobot.status_flag = 1;                    // Example status
 
     // 2. Send the Struct
     // We cast the ADDRESS of the struct (&myRobot) to a (uint8_t*) pointer.

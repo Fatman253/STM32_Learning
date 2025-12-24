@@ -1,7 +1,7 @@
 import serial
 import struct
 
-ser = serial.Serial('COM13', 115200) # Replace COMx
+ser = serial.Serial('COM5', 115200) # Replace COMx
 
 while True:
     # Read exactly 7 bytes (size of your struct)
