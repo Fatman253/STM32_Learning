@@ -1,14 +1,19 @@
 import serial
 import struct
 
-ser = serial.Serial('COM5', 115200) # Replace COMx
+ser = serial.Serial('COM13', 115200) 
 
 while True:
-    # Read exactly 7 bytes (size of your struct)
-    data = ser.read(7) 
+    # 1. CHANGE SIZE: Read 9 bytes now (Old 7 + New 2)
+    data = ser.read(9) 
     
-    # Unpack: '<' = Little Endian (STM32 standard)
-    # 'I' = uint32 (4 bytes), 'H' = uint16 (2 bytes), 'B' = uint8 (1 byte)
-    timestamp, pwm, status = struct.unpack('<IHB', data)
-    
-    print(f"Time: {timestamp}, PWM: {pwm}, Status: {status}")
+    if len(data) == 9:
+        # 2. UPDATE FORMAT: Add 'h' at the end for int16_t
+        # '<' = Little Endian
+        # 'I' = uint32 (Timestamp)
+        # 'H' = uint16 (PWM)
+        # 'B' = uint8  (Status)
+        # 'h' = int16  (Encoder - Lowercase 'h' means SIGNED short)
+        timestamp, pwm, status, encoder = struct.unpack('<IHBh', data)
+        
+        print(f"Time: {timestamp}, PWM: {pwm}, Status: {status}, Encoder: {encoder}")
